@@ -2,11 +2,11 @@
  * REVERIE DIGITALS - AI GROWTH ENGINE (ENTERPRISE EDITION)
  * --------------------------------------------------------
  * Architecture: Event-Driven Node.js Server
- * Integrations: WhatsApp Cloud API (Meta), OpenRouter (Gemini 2.0)
+ * Integrations: WhatsApp Cloud API (Meta), OpenRouter (Gemini 2.0 + Failover)
  * Security: Helmet, Rate Limiting, CORS, Input Validation
  * Performance: In-Memory Session Management with Auto-Garbage Collection
  * * @author Reverie Digitals
- * @version 2.1.0
+ * @version 2.2.1 (Stable with Proxy Fix)
  */
 
 // --- 1. CORE DEPENDENCIES ---
@@ -20,7 +20,6 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 // --- 2. INTELLIGENCE MODULE ---
-// We import the prompt from brain.js to keep logic separate
 const systemPrompt = require('./brain');
 
 // --- 3. CONFIGURATION & SECRETS ---
@@ -28,37 +27,42 @@ const APP_CONFIG = {
     WHATSAPP_TOKEN: "EAAMRCGZCFeK8BQOLZBfGmrfhDVAC8gQk55bEacluGWKrtXem6TiaLSs1AUvZBxBa6S5ybyLMUnL5fWyW1TlU26jTnZAX2zD2bB8W9fEZBnZAORzl7iyUtTUseu5eKVaodtDVizuiTMfwyMnLwvRwcqS5DBKtcD8sqXH7jhGUW571hpRHHROXaPRt5RjRTopPMVUtCK7MDN5z3c5wXHu4DDUZC4ZBhZAigmOXS0LbsX02V9nL4xhoLD5xKLIJOvko173eYkGRXfTMDIFFz0FBSZBK4B",
     PHONE_NUMBER_ID: "825470453992044",
     VERIFY_TOKEN: "clothing-bot-secure-2025",
-    OPENROUTER_KEY: "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",
-    AI_MODEL: "google/gemini-2.0-flash-exp:free",
+    
+    // ⚠️ CRITICAL: YOU MUST PASTE A NEW KEY HERE. THE OLD ONE IS DEAD (401 ERROR).
+    OPENROUTER_KEY: "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", 
+    
+    // FAILOVER STRATEGY: Try Google first, then Meta Llama, then Mistral
+    AI_MODELS: [
+        "google/gemini-2.0-flash-exp:free",
+        "meta-llama/llama-3.1-8b-instruct:free", 
+        "mistralai/mistral-7b-instruct:free"
+    ],
+    
     PORT: process.env.PORT || 3000
 };
 
 // --- 4. SERVER INITIALIZATION ---
 const app = express();
 
-// Security Middleware (The "Shield")
-app.use(helmet()); // Protects against common HTTP header attacks
-app.use(cors()); // Controls access permissions
-app.use(morgan('combined')); // Professional request logging
+// FIX FOR RENDER: Trust the reverse proxy so rate limiting works correctly
+app.set('trust proxy', 1); 
+
+app.use(helmet()); 
+app.use(cors()); 
+app.use(morgan('combined')); 
 app.use(bodyParser.json());
 
-// Rate Limiting (Anti-Spam Protection)
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000, 
+    max: 100, 
     message: "Too many requests from this IP, please try again later."
 });
 app.use('/webhook', limiter);
 
-// --- 5. SESSION MANAGEMENT (RAM DATABASE) ---
-// Stores conversation history. In production, swap this for Redis/MongoDB.
+// --- 5. SESSION MANAGEMENT ---
 const sessionStore = new Map();
 const SESSION_TTL = 1000 * 60 * 60 * 2; // 2 Hours
 
-/**
- * Garbage Collector: Removes old sessions to prevent memory leaks.
- * Runs every hour.
- */
 setInterval(() => {
     const now = Date.now();
     let cleaned = 0;
@@ -72,19 +76,10 @@ setInterval(() => {
 }, 1000 * 60 * 60);
 
 // --- 6. ROUTES ---
-
-/**
- * HEALTH CHECK
- * Used by hosting providers (Render/Replit) to ensure the bot is alive.
- */
 app.get('/', (req, res) => {
     res.status(200).json({ status: 'online', service: 'Reverie AI Engine', uptime: process.uptime() });
 });
 
-/**
- * WEBHOOK VERIFICATION
- * The "Handshake" with Meta servers.
- */
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -99,38 +94,27 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-/**
- * MESSAGE INGESTION ENGINE
- * Handles incoming WhatsApp messages asynchronously.
- */
 app.post('/webhook', async (req, res) => {
     const body = req.body;
-
-    // Immediately acknowledge receipt to Meta (prevents retries)
     res.sendStatus(200);
 
     try {
         if (!body.object || !body.entry) return;
-
         const changes = body.entry[0]?.changes?.[0]?.value;
         if (!changes || !changes.messages) return;
 
         const message = changes.messages[0];
-        const from = message.from; // Customer Phone
+        const from = message.from; 
         const messageId = message.id;
 
-        // 1. Mark message as read immediately (Blue Ticks)
         await markAsRead(messageId);
 
-        // 2. Handle Text Messages
         if (message.type === 'text') {
             const userText = message.text.body;
             console.log('[Inbound] ' + from + ': ' + userText);
 
-            // 3. Generate AI Response
+            // Generate AI Response with Failover
             const aiReply = await generateAIResponse(from, userText);
-
-            // 4. Dispatch Response
             await sendWhatsAppMessage(from, aiReply);
         }
         
@@ -141,12 +125,7 @@ app.post('/webhook', async (req, res) => {
 
 // --- 7. CORE LOGIC ENGINES ---
 
-/**
- * AI BRAIN INTERFACE
- * Manages context window, history, and OpenRouter API calls.
- */
 async function generateAIResponse(userId, userText) {
-    // A. Initialize or Fetch Session
     if (!sessionStore.has(userId)) {
         sessionStore.set(userId, {
             history: [{ role: "system", content: systemPrompt }],
@@ -158,49 +137,52 @@ async function generateAIResponse(userId, userText) {
     session.lastActive = Date.now();
     session.history.push({ role: "user", content: userText });
 
-    // B. Token Management (Keep context window small to save cost/latency)
-    // We keep System Prompt + Last 15 messages
+    // Context Window Management
     if (session.history.length > 16) {
         session.history = [
-            session.history[0], // Keep System Prompt (Identity)
-            ...session.history.slice(-15) // Keep recent context
+            session.history[0], 
+            ...session.history.slice(-15)
         ];
     }
 
-    try {
-        // C. Call AI API
-        const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
-            model: APP_CONFIG.AI_MODEL,
-            messages: session.history,
-            temperature: 0.7, // Creativity balance
-            max_tokens: 300   // Limit response length for WhatsApp brevity
-        }, {
-            headers: {
-                "Authorization": "Bearer " + APP_CONFIG.OPENROUTER_KEY,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://reverie-digitals.com",
-                "X-Title": "Reverie Sales Bot"
+    // --- FAILOVER LOGIC ---
+    // Will try Model 1 -> Model 2 -> Model 3
+    for (const modelName of APP_CONFIG.AI_MODELS) {
+        try {
+            console.log("Attempting AI generation with model: " + modelName);
+            const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+                model: modelName,
+                messages: session.history,
+                temperature: 0.7,
+                max_tokens: 300
+            }, {
+                headers: {
+                    "Authorization": "Bearer " + APP_CONFIG.OPENROUTER_KEY,
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://reverie-digitals.com",
+                    "X-Title": "Reverie Sales Bot"
+                }
+            });
+
+            const reply = response.data.choices[0].message.content;
+            session.history.push({ role: "assistant", content: reply });
+            return reply; // Success! Return immediately.
+
+        } catch (error) {
+            console.error("Model " + modelName + " failed: " + (error.response?.data?.error?.message || error.message));
+            
+            // If the error is 401 (Bad Key), fail immediately, don't try other models
+            if (error.response?.status === 401) {
+                console.error("CRITICAL: Your API Key is invalid. Stop trying.");
+                return "System Error: The AI Key is invalid (401). Please update the code.";
             }
-        });
-
-        const reply = response.data.choices[0].message.content;
-        
-        // D. Update History
-        session.history.push({ role: "assistant", content: reply });
-        
-        return reply;
-
-    } catch (error) {
-        console.error("[AI Error] OpenRouter failed:", error.response?.data || error.message);
-        // Fallback strategy if AI is down
-        return "I'm checking our schedule for you. Can you give me a moment?";
+        }
     }
+
+    // If ALL models fail:
+    return "I am currently receiving high traffic and my servers are busy. Please message me again in 1 minute.";
 }
 
-/**
- * WHATSAPP DISPATCHER
- * Sends text messages via Graph API.
- */
 async function sendWhatsAppMessage(to, text) {
     try {
         await axios({
@@ -223,10 +205,6 @@ async function sendWhatsAppMessage(to, text) {
     }
 }
 
-/**
- * READ RECEIPT SIGNAL
- * Triggers blue ticks on the user's phone.
- */
 async function markAsRead(messageId) {
     try {
         await axios({
@@ -243,25 +221,17 @@ async function markAsRead(messageId) {
             }
         });
     } catch (error) {
-        // Silent fail for read receipts is acceptable
+        // Silent fail
     }
 }
 
 // --- 8. PROCESS SAFETY ---
+process.on('uncaughtException', (err) => { console.error('[Critical] Uncaught Exception:', err); });
+process.on('unhandledRejection', (reason, promise) => { console.error('[Critical] Unhandled Rejection:', reason); });
 
-// Catch Unhandled Exceptions (Prevents crashes)
-process.on('uncaughtException', (err) => {
-    console.error('[Critical] Uncaught Exception:', err);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('[Critical] Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-// Start Server
 app.listen(APP_CONFIG.PORT, () => {
-    console.log('\n🚀 REVERIE AI ENGINE ONLINE');
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v2.2.1 Stable)');
     console.log('🛡️  Security Modules: Active');
-    console.log('🧠 AI Model: ' + APP_CONFIG.AI_MODEL);
+    console.log('🧠 AI Failover System: Active');
     console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
 });
