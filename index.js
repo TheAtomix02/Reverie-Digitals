@@ -6,7 +6,7 @@
  * Security: Helmet, Rate Limiting, CORS, Input Validation
  * Performance: In-Memory Session Management with Auto-Garbage Collection
  * * @author Reverie Digitals
- * @version 3.0.0 (Google Direct)
+ * @version 3.0.1 (Google Direct - Gemini 2.0)
  */
 
 // --- 1. CORE DEPENDENCIES ---
@@ -143,16 +143,15 @@ async function generateGoogleResponse(userId, userText) {
 
     try {
         // Construct the payload for Google Gemini
+        // We use the Experimental 2.0 Flash model which is free and advanced
         const payload = {
             contents: [
                 { role: "user", parts: [{ text: systemPrompt + "\n\nUser says: " + userText }] }
-                // Note: For simplicity in this version, we send the system prompt + user text as one block
-                // to avoid complex history management issues.
             ]
         };
 
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${APP_CONFIG.GOOGLE_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${APP_CONFIG.GOOGLE_API_KEY}`,
             payload,
             { headers: { "Content-Type": "application/json" } }
         );
@@ -217,6 +216,6 @@ process.on('uncaughtException', (err) => { console.error('[Critical] Uncaught Ex
 process.on('unhandledRejection', (reason, promise) => { console.error('[Critical] Unhandled Rejection:', reason); });
 
 app.listen(APP_CONFIG.PORT, () => {
-    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.0 Google Direct)');
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.0.1 Google Direct)');
     console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
 });
