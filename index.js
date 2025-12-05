@@ -68,7 +68,7 @@ setInterval(() => {
             cleaned++;
         }
     }
-    if (cleaned > 0) console.log([GC] Cleaned ${cleaned} expired sessions.);
+    if (cleaned > 0) console.log('[GC] Cleaned ' + cleaned + ' expired sessions.');
 }, 1000 * 60 * 60);
 
 // --- 6. ROUTES ---
@@ -125,7 +125,7 @@ app.post('/webhook', async (req, res) => {
         // 2. Handle Text Messages
         if (message.type === 'text') {
             const userText = message.text.body;
-            console.log([Inbound] ${from}: ${userText});
+            console.log('[Inbound] ' + from + ': ' + userText);
 
             // 3. Generate AI Response
             const aiReply = await generateAIResponse(from, userText);
@@ -176,7 +176,7 @@ async function generateAIResponse(userId, userText) {
             max_tokens: 300   // Limit response length for WhatsApp brevity
         }, {
             headers: {
-                "Authorization": Bearer ${APP_CONFIG.OPENROUTER_KEY},
+                "Authorization": "Bearer " + APP_CONFIG.OPENROUTER_KEY,
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://reverie-digitals.com",
                 "X-Title": "Reverie Sales Bot"
@@ -205,9 +205,9 @@ async function sendWhatsAppMessage(to, text) {
     try {
         await axios({
             method: "POST",
-            url: https://graph.facebook.com/v17.0/${APP_CONFIG.PHONE_NUMBER_ID}/messages,
+            url: "https://graph.facebook.com/v17.0/" + APP_CONFIG.PHONE_NUMBER_ID + "/messages",
             headers: { 
-                "Authorization": Bearer ${APP_CONFIG.WHATSAPP_TOKEN}, 
+                "Authorization": "Bearer " + APP_CONFIG.WHATSAPP_TOKEN, 
                 "Content-Type": "application/json" 
             },
             data: {
@@ -217,7 +217,7 @@ async function sendWhatsAppMessage(to, text) {
                 text: { body: text }
             }
         });
-        console.log([Outbound] Sent to ${to});
+        console.log('[Outbound] Sent to ' + to);
     } catch (error) {
         console.error("[WhatsApp Error] Send failed:", error.response?.data || error.message);
     }
@@ -231,9 +231,9 @@ async function markAsRead(messageId) {
     try {
         await axios({
             method: "POST",
-            url: https://graph.facebook.com/v17.0/${APP_CONFIG.PHONE_NUMBER_ID}/messages,
+            url: "https://graph.facebook.com/v17.0/" + APP_CONFIG.PHONE_NUMBER_ID + "/messages",
             headers: { 
-                "Authorization": Bearer ${APP_CONFIG.WHATSAPP_TOKEN}, 
+                "Authorization": "Bearer " + APP_CONFIG.WHATSAPP_TOKEN, 
                 "Content-Type": "application/json" 
             },
             data: {
@@ -260,8 +260,8 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Start Server
 app.listen(APP_CONFIG.PORT, () => {
-    console.log(\n🚀 REVERIE AI ENGINE ONLINE);
-    console.log(🛡  Security Modules: Active);
-    console.log(🧠 AI Model: ${APP_CONFIG.AI_MODEL});
-    console.log(📡 Port: ${APP_CONFIG.PORT}\n);
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE');
+    console.log('🛡️  Security Modules: Active');
+    console.log('🧠 AI Model: ' + APP_CONFIG.AI_MODEL);
+    console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
 });
