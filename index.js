@@ -3,7 +3,7 @@
  * --------------------------------------------------------
  * Architecture: Event-Driven Node.js Server
  * Integrations: WhatsApp Cloud API (Meta), OpenRouter (Gemini 2.0 + Failover)
- * Security: Helmet, Rate Limiting, CORS, Input Validation
+ * Security: Helmet, Rate Limiting, CORS, Input Validatio
  * Performance: In-Memory Session Management with Auto-Garbage Collection
  * * @author Reverie Digitals
  * @version 2.2.1 (Stable with Proxy Fix)
