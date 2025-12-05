@@ -1,13 +1,13 @@
 /**
- * REVERIE DIGITALS - AI GROWTH ENGINE (INDIA STABLE EDITION)
+ * REVERIE DIGITALS - AI GROWTH ENGINE (AUTO-DISCOVERY EDITION)
  * --------------------------------------------------------
  * Architecture: Event-Driven Node.js Server
  * Integrations: WhatsApp Cloud API (Meta), Google Gemini API (Direct)
  * Security: Helmet, Rate Limiting, CORS, Input Validation
  * Performance: In-Memory Session Management with Auto-Garbage Collection
- * Reliability: Extended Model List for India Region Stability
+ * Intelligence: Self-Configuring Model Discovery (No guessing)
  * * @author Reverie Digitals
- * @version 3.2.0 (Google Direct - India Failover)
+ * @version 4.0.0 (Enterprise Gold)
  */
 
 // --- 1. CORE DEPENDENCIES ---
@@ -25,7 +25,6 @@ const systemPrompt = require('./brain');
 
 // --- 3. CONFIGURATION & SECRETS ---
 const APP_CONFIG = {
-    // WhatsApp Token (Starts with EAAM...)
     WHATSAPP_TOKEN: "EAAMRCGZCFeK8BQOLZBfGmrfhDVAC8gQk55bEacluGWKrtXem6TiaLSs1AUvZBxBa6S5ybyLMUnL5fWyW1TlU26jTnZAX2zD2bB8W9fEZBnZAORzl7iyUtTUseu5eKVaodtDVizuiTMfwyMnLwvRwcqS5DBKtcD8sqXH7jhGUW571hpRHHROXaPRt5RjRTopPMVUtCK7MDN5z3c5wXHu4DDUZC4ZBhZAigmOXS0LbsX02V9nL4xhoLD5xKLIJOvko173eYkGRXfTMDIFFz0FBSZBK4B",
     PHONE_NUMBER_ID: "825470453992044",
     VERIFY_TOKEN: "clothing-bot-secure-2025",
@@ -33,20 +32,12 @@ const APP_CONFIG = {
     // ⚠️ PASTE YOUR GOOGLE KEY HERE (Starts with AIza...)
     GOOGLE_API_KEY: "AIzaSyAov26okhg1JpQH2lNUaPPumWWhab2fR30", 
     
-    // FAILOVER LIST (OPTIMIZED FOR INDIA): 
-    // We use specific version numbers (001, 002) which are more stable than generic aliases.
-    GOOGLE_MODELS: [
-        "gemini-1.5-flash",      // Standard Fast Model
-        "gemini-1.5-flash-001",  // Specific Version 1 (Very Stable)
-        "gemini-1.5-flash-002",  // Specific Version 2 (Newer)
-        "gemini-1.5-flash-8b",   // High Efficiency / Low Latency
-        "gemini-1.5-pro",        // Smarter Model
-        "gemini-1.5-pro-001",    // Specific Pro Version
-        "gemini-2.0-flash-exp"   // Experimental (Last resort due to quotas)
-    ],
-    
     PORT: process.env.PORT || 3000
 };
+
+// --- GLOBAL STATE FOR AI MODELS ---
+// We will populate this list automatically on startup.
+let AVAILABLE_MODELS = [];
 
 // --- 4. SERVER INITIALIZATION ---
 const app = express();
@@ -81,7 +72,12 @@ setInterval(() => {
 
 // --- 6. ROUTES ---
 app.get('/', (req, res) => {
-    res.status(200).json({ status: 'online', service: 'Reverie AI Engine (India Stable)', uptime: process.uptime() });
+    res.status(200).json({ 
+        status: 'online', 
+        service: 'Reverie AI Engine (Auto-Discovery)', 
+        active_models: AVAILABLE_MODELS.length > 0 ? AVAILABLE_MODELS : "Detecting...",
+        uptime: process.uptime() 
+    });
 });
 
 app.get('/webhook', (req, res) => {
@@ -115,9 +111,8 @@ app.post('/webhook', async (req, res) => {
 
         if (message.type === 'text') {
             const userText = message.text.body;
-            console.log('[Inbound] ' + from + ': ' + userText);
+            console.log(`[Inbound] ${from}: ${userText}`);
 
-            // Generate AI Response (Google with Failover)
             const aiReply = await generateGoogleResponse(from, userText);
             await sendWhatsAppMessage(from, aiReply);
         }
@@ -127,37 +122,72 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// --- 7. CORE LOGIC ENGINES (GOOGLE GEMINI DIRECT) ---
+// --- 7. ADVANCED AI ENGINE (AUTO-DISCOVERY & RETRY) ---
 
-async function generateGoogleResponse(userId, userText) {
-    // Safety Check
+/**
+ * Startup Function: Discovers available models for YOUR specific API Key.
+ * This prevents 404 errors by never guessing.
+ */
+async function discoverModels() {
     if (APP_CONFIG.GOOGLE_API_KEY.includes("PASTE")) {
-        console.error("❌ ERROR: Google API Key is missing in index.js");
-        return "System Error: API Key missing.";
+        console.error("❌ CRITICAL: Google API Key missing. Skipping model discovery.");
+        return;
     }
 
+    console.log("🔍 Auto-Discovering AI Models for your Key...");
+    try {
+        const response = await axios.get(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${APP_CONFIG.GOOGLE_API_KEY}`
+        );
+        
+        const models = response.data.models;
+        
+        // Filter: Only keep models that can generate text (content)
+        // Sort: Prioritize 1.5 Flash (Fastest), then 1.5 Pro, then Legacy
+        AVAILABLE_MODELS = models
+            .filter(m => m.supportedGenerationMethods.includes("generateContent"))
+            .map(m => m.name.replace("models/", "")) // Clean name
+            .sort((a, b) => {
+                // Custom ranking logic
+                const score = (name) => {
+                    if (name.includes("1.5-flash")) return 1; // Top priority
+                    if (name.includes("1.5-pro")) return 2;
+                    if (name.includes("gemini-pro")) return 3;
+                    return 4;
+                };
+                return score(a) - score(b);
+            });
+
+        console.log(`✅ Discovery Complete. Found ${AVAILABLE_MODELS.length} valid models.`);
+        console.log(`🚀 Priority List: ${AVAILABLE_MODELS.slice(0, 3).join(", ")}...`);
+
+    } catch (error) {
+        console.error("⚠️ Discovery Failed. Falling back to safe list.", error.message);
+        AVAILABLE_MODELS = ["gemini-pro", "gemini-1.5-flash"];
+    }
+}
+
+/**
+ * AI Generation with Auto-Failover and Retry
+ */
+async function generateGoogleResponse(userId, userText) {
+    if (APP_CONFIG.GOOGLE_API_KEY.includes("PASTE")) return "System Error: API Key missing.";
+
     if (!sessionStore.has(userId)) {
-        sessionStore.set(userId, {
-            history: [], 
-            lastActive: Date.now()
-        });
+        sessionStore.set(userId, { history: [], lastActive: Date.now() });
     }
     
     const session = sessionStore.get(userId);
     session.lastActive = Date.now();
-
-    // Add user message to local history
     session.history.push({ role: "user", parts: [{ text: userText }] });
 
-    // Keep history short (Last 10 turns)
-    if (session.history.length > 10) {
-        session.history = session.history.slice(-10);
-    }
+    // Keep context tight
+    if (session.history.length > 10) session.history = session.history.slice(-10);
 
-    // --- MULTI-MODEL FAILOVER LOOP ---
-    for (const modelName of APP_CONFIG.GOOGLE_MODELS) {
+    // Try available models in order of priority
+    for (const modelName of AVAILABLE_MODELS) {
         try {
-            console.log("🤖 Attempting generation with: " + modelName);
+            console.log(`🤖 generating with: ${modelName}`);
             
             const payload = {
                 contents: [
@@ -173,32 +203,34 @@ async function generateGoogleResponse(userId, userText) {
 
             const reply = response.data.candidates[0].content.parts[0].text;
             
-            // Success! We found a working model.
-            console.log("✅ Success with: " + modelName);
-            
             // Add AI reply to history
             session.history.push({ role: "model", parts: [{ text: reply }] });
-            
             return reply;
 
         } catch (error) {
-            console.warn(`⚠️ Model ${modelName} Failed: ${error.response?.data?.error?.message || error.message}`);
-            // If it failed, the loop continues to the next model in the list.
+            const errCode = error.response?.status;
+            const errMsg = error.response?.data?.error?.message || error.message;
+            console.warn(`⚠️ ${modelName} Failed (${errCode}): ${errMsg}`);
+            
+            // 429 = Too Many Requests. Wait 2 seconds and continue loop.
+            if (errCode === 429) {
+                console.log("⏳ Rate limited. Cooling down for 1s...");
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
     }
 
-    // If we get here, ALL models failed.
-    console.error("❌ CRITICAL: All AI Models failed.");
-    return "I am currently receiving extremely high traffic. Please try again in 1 minute.";
+    console.error("❌ CRITICAL: All Available Models Failed.");
+    return "I am currently overloaded. Please try again in a moment.";
 }
 
 async function sendWhatsAppMessage(to, text) {
     try {
         await axios({
             method: "POST",
-            url: "https://graph.facebook.com/v17.0/" + APP_CONFIG.PHONE_NUMBER_ID + "/messages",
+            url: `https://graph.facebook.com/v17.0/${APP_CONFIG.PHONE_NUMBER_ID}/messages`,
             headers: { 
-                "Authorization": "Bearer " + APP_CONFIG.WHATSAPP_TOKEN, 
+                "Authorization": `Bearer ${APP_CONFIG.WHATSAPP_TOKEN}`, 
                 "Content-Type": "application/json" 
             },
             data: {
@@ -208,9 +240,9 @@ async function sendWhatsAppMessage(to, text) {
                 text: { body: text }
             }
         });
-        console.log('[Outbound] Sent to ' + to);
+        console.log(`[Outbound] Sent to ${to}`);
     } catch (error) {
-        console.error("[WhatsApp Error] Send failed:", error.response?.data || error.message);
+        console.error("[WhatsApp Error]", error.response?.data || error.message);
     }
 }
 
@@ -218,29 +250,24 @@ async function markAsRead(messageId) {
     try {
         await axios({
             method: "POST",
-            url: "https://graph.facebook.com/v17.0/" + APP_CONFIG.PHONE_NUMBER_ID + "/messages",
+            url: `https://graph.facebook.com/v17.0/${APP_CONFIG.PHONE_NUMBER_ID}/messages`,
             headers: { 
-                "Authorization": "Bearer " + APP_CONFIG.WHATSAPP_TOKEN, 
+                "Authorization": `Bearer ${APP_CONFIG.WHATSAPP_TOKEN}`, 
                 "Content-Type": "application/json" 
             },
-            data: {
-                messaging_product: "whatsapp",
-                status: "read",
-                message_id: messageId
-            }
+            data: { messaging_product: "whatsapp", status: "read", message_id: messageId }
         });
-    } catch (error) {
-        // Silent fail
-    }
+    } catch (e) {}
 }
 
 // --- 8. PROCESS SAFETY ---
-process.on('uncaughtException', (err) => { console.error('[Critical] Uncaught Exception:', err); });
-process.on('unhandledRejection', (reason, promise) => { console.error('[Critical] Unhandled Rejection:', reason); });
+process.on('uncaughtException', (err) => console.error('[Critical] Uncaught:', err));
+process.on('unhandledRejection', (reason) => console.error('[Critical] Unhandled:', reason));
 
-app.listen(APP_CONFIG.PORT, () => {
-    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.2.0 India Stable)');
-    console.log('🛡️  Security Modules: Active');
-    console.log('🧠 AI Strategy: Rolling Failover');
-    console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
+app.listen(APP_CONFIG.PORT, async () => {
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v4.0.0 Auto-Discovery)');
+    console.log('📡 Port: ' + APP_CONFIG.PORT);
+    
+    // STARTUP TASK: CHECK MODELS
+    await discoverModels();
 });
