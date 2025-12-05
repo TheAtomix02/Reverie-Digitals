@@ -5,8 +5,9 @@
  * Integrations: WhatsApp Cloud API (Meta), Google Gemini API (Direct)
  * Security: Helmet, Rate Limiting, CORS, Input Validation
  * Performance: In-Memory Session Management with Auto-Garbage Collection
+ * Reliability: Multi-Model Failover System (Unstoppable Mode)
  * * @author Reverie Digitals
- * @version 3.0.1 (Google Direct - Gemini 2.0)
+ * @version 3.1.0 (Google Direct - Multi-Model Failover)
  */
 
 // --- 1. CORE DEPENDENCIES ---
@@ -31,6 +32,14 @@ const APP_CONFIG = {
     
     // ⚠️ PASTE YOUR GOOGLE KEY HERE (Starts with AIza...)
     GOOGLE_API_KEY: "AIzaSyAov26okhg1JpQH2lNUaPPumWWhab2fR30", 
+    
+    // FAILOVER LIST: The bot will try these in order until one works.
+    GOOGLE_MODELS: [
+        "gemini-1.5-flash", // Fastest & Cheapest (Primary)
+        "gemini-1.5-pro",   // Smarter, higher limits
+        "gemini-1.0-pro",   // Old reliable backup
+        "gemini-2.0-flash-exp" // Experimental bleeding edge
+    ],
     
     PORT: process.env.PORT || 3000
 };
@@ -68,7 +77,7 @@ setInterval(() => {
 
 // --- 6. ROUTES ---
 app.get('/', (req, res) => {
-    res.status(200).json({ status: 'online', service: 'Reverie AI Engine (Google)', uptime: process.uptime() });
+    res.status(200).json({ status: 'online', service: 'Reverie AI Engine (Google Failover)', uptime: process.uptime() });
 });
 
 app.get('/webhook', (req, res) => {
@@ -104,7 +113,7 @@ app.post('/webhook', async (req, res) => {
             const userText = message.text.body;
             console.log('[Inbound] ' + from + ': ' + userText);
 
-            // Generate AI Response (Google)
+            // Generate AI Response (Google with Failover)
             const aiReply = await generateGoogleResponse(from, userText);
             await sendWhatsAppMessage(from, aiReply);
         }
@@ -125,7 +134,7 @@ async function generateGoogleResponse(userId, userText) {
 
     if (!sessionStore.has(userId)) {
         sessionStore.set(userId, {
-            history: [], // Google format is different, we build it below
+            history: [], 
             lastActive: Date.now()
         });
     }
@@ -141,32 +150,44 @@ async function generateGoogleResponse(userId, userText) {
         session.history = session.history.slice(-10);
     }
 
-    try {
-        // Construct the payload for Google Gemini
-        // We use the Experimental 2.0 Flash model which is free and advanced
-        const payload = {
-            contents: [
-                { role: "user", parts: [{ text: systemPrompt + "\n\nUser says: " + userText }] }
-            ]
-        };
+    // --- MULTI-MODEL FAILOVER LOOP ---
+    for (const modelName of APP_CONFIG.GOOGLE_MODELS) {
+        try {
+            console.log("🤖 Attempting generation with: " + modelName);
+            
+            // Construct the payload for Google Gemini
+            const payload = {
+                contents: [
+                    { role: "user", parts: [{ text: systemPrompt + "\n\nUser says: " + userText }] }
+                ]
+            };
 
-        const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${APP_CONFIG.GOOGLE_API_KEY}`,
-            payload,
-            { headers: { "Content-Type": "application/json" } }
-        );
+            const response = await axios.post(
+                `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${APP_CONFIG.GOOGLE_API_KEY}`,
+                payload,
+                { headers: { "Content-Type": "application/json" } }
+            );
 
-        const reply = response.data.candidates[0].content.parts[0].text;
-        
-        // Add AI reply to history
-        session.history.push({ role: "model", parts: [{ text: reply }] });
-        
-        return reply;
+            const reply = response.data.candidates[0].content.parts[0].text;
+            
+            // Success! We found a working model.
+            console.log("✅ Success with: " + modelName);
+            
+            // Add AI reply to history
+            session.history.push({ role: "model", parts: [{ text: reply }] });
+            
+            return reply;
 
-    } catch (error) {
-        console.error("Google AI Failed:", error.response?.data || error.message);
-        return "I'm having trouble connecting to the server. Please try again in a moment.";
+        } catch (error) {
+            console.warn(`⚠️ Model ${modelName} Failed: ${error.response?.data?.error?.message || error.message}`);
+            // If it failed, the loop continues to the next model in the list automatically.
+            // If it was the last model, the loop ends.
+        }
     }
+
+    // If we get here, ALL models failed.
+    console.error("❌ CRITICAL: All AI Models failed.");
+    return "I am currently receiving extremely high traffic. Please try again in 1 minute.";
 }
 
 async function sendWhatsAppMessage(to, text) {
@@ -216,6 +237,8 @@ process.on('uncaughtException', (err) => { console.error('[Critical] Uncaught Ex
 process.on('unhandledRejection', (reason, promise) => { console.error('[Critical] Unhandled Rejection:', reason); });
 
 app.listen(APP_CONFIG.PORT, () => {
-    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.0.1 Google Direct)');
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.1.0 Multi-Model Failover)');
+    console.log('🛡️  Security Modules: Active');
+    console.log('🧠 AI Strategy: Rolling Failover');
     console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
 });
