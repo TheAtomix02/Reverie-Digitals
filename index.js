@@ -1,12 +1,12 @@
 /**
- * REVERIE DIGITALS - AI GROWTH ENGINE (ENTERPRISE EDITION)
+ * REVERIE DIGITALS - AI GROWTH ENGINE (GOOGLE EDITION)
  * --------------------------------------------------------
  * Architecture: Event-Driven Node.js Server
- * Integrations: WhatsApp Cloud API (Meta), OpenRouter (Gemini 2.0 + Failover)
- * Security: Helmet, Rate Limiting, CORS, Input Validatio
+ * Integrations: WhatsApp Cloud API (Meta), Google Gemini API (Direct)
+ * Security: Helmet, Rate Limiting, CORS, Input Validation
  * Performance: In-Memory Session Management with Auto-Garbage Collection
  * * @author Reverie Digitals
- * @version 2.2.1 (Stable with Proxy Fix)
+ * @version 3.0.0 (Google Direct)
  */
 
 // --- 1. CORE DEPENDENCIES ---
@@ -24,29 +24,20 @@ const systemPrompt = require('./brain');
 
 // --- 3. CONFIGURATION & SECRETS ---
 const APP_CONFIG = {
+    // WhatsApp Token (Starts with EAAM...)
     WHATSAPP_TOKEN: "EAAMRCGZCFeK8BQOLZBfGmrfhDVAC8gQk55bEacluGWKrtXem6TiaLSs1AUvZBxBa6S5ybyLMUnL5fWyW1TlU26jTnZAX2zD2bB8W9fEZBnZAORzl7iyUtTUseu5eKVaodtDVizuiTMfwyMnLwvRwcqS5DBKtcD8sqXH7jhGUW571hpRHHROXaPRt5RjRTopPMVUtCK7MDN5z3c5wXHu4DDUZC4ZBhZAigmOXS0LbsX02V9nL4xhoLD5xKLIJOvko173eYkGRXfTMDIFFz0FBSZBK4B",
     PHONE_NUMBER_ID: "825470453992044",
     VERIFY_TOKEN: "clothing-bot-secure-2025",
     
-    // ⚠️ CRITICAL: YOU MUST PASTE A NEW KEY HERE. THE OLD ONE IS DEAD (401 ERROR).
-    OPENROUTER_KEY: "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", 
-    
-    // FAILOVER STRATEGY: Try Google first, then Meta Llama, then Mistral
-    AI_MODELS: [
-        "google/gemini-2.0-flash-exp:free",
-        "meta-llama/llama-3.1-8b-instruct:free", 
-        "mistralai/mistral-7b-instruct:free"
-    ],
+    // ⚠️ PASTE YOUR GOOGLE KEY HERE (Starts with AIza...)
+    GOOGLE_API_KEY: "AIzaSyAov26okhg1JpQH2lNUaPPumWWhab2fR30", 
     
     PORT: process.env.PORT || 3000
 };
 
 // --- 4. SERVER INITIALIZATION ---
 const app = express();
-
-// FIX FOR RENDER: Trust the reverse proxy so rate limiting works correctly
 app.set('trust proxy', 1); 
-
 app.use(helmet()); 
 app.use(cors()); 
 app.use(morgan('combined')); 
@@ -61,7 +52,7 @@ app.use('/webhook', limiter);
 
 // --- 5. SESSION MANAGEMENT ---
 const sessionStore = new Map();
-const SESSION_TTL = 1000 * 60 * 60 * 2; // 2 Hours
+const SESSION_TTL = 1000 * 60 * 60 * 2; 
 
 setInterval(() => {
     const now = Date.now();
@@ -77,7 +68,7 @@ setInterval(() => {
 
 // --- 6. ROUTES ---
 app.get('/', (req, res) => {
-    res.status(200).json({ status: 'online', service: 'Reverie AI Engine', uptime: process.uptime() });
+    res.status(200).json({ status: 'online', service: 'Reverie AI Engine (Google)', uptime: process.uptime() });
 });
 
 app.get('/webhook', (req, res) => {
@@ -113,8 +104,8 @@ app.post('/webhook', async (req, res) => {
             const userText = message.text.body;
             console.log('[Inbound] ' + from + ': ' + userText);
 
-            // Generate AI Response with Failover
-            const aiReply = await generateAIResponse(from, userText);
+            // Generate AI Response (Google)
+            const aiReply = await generateGoogleResponse(from, userText);
             await sendWhatsAppMessage(from, aiReply);
         }
         
@@ -123,64 +114,60 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// --- 7. CORE LOGIC ENGINES ---
+// --- 7. CORE LOGIC ENGINES (GOOGLE GEMINI DIRECT) ---
 
-async function generateAIResponse(userId, userText) {
+async function generateGoogleResponse(userId, userText) {
+    // Safety Check
+    if (APP_CONFIG.GOOGLE_API_KEY.includes("PASTE")) {
+        console.error("❌ ERROR: Google API Key is missing in index.js");
+        return "System Error: API Key missing.";
+    }
+
     if (!sessionStore.has(userId)) {
         sessionStore.set(userId, {
-            history: [{ role: "system", content: systemPrompt }],
+            history: [], // Google format is different, we build it below
             lastActive: Date.now()
         });
     }
     
     const session = sessionStore.get(userId);
     session.lastActive = Date.now();
-    session.history.push({ role: "user", content: userText });
 
-    // Context Window Management
-    if (session.history.length > 16) {
-        session.history = [
-            session.history[0], 
-            ...session.history.slice(-15)
-        ];
+    // Add user message to local history (Simplified for Google)
+    session.history.push({ role: "user", parts: [{ text: userText }] });
+
+    // Keep history short (Last 10 turns)
+    if (session.history.length > 10) {
+        session.history = session.history.slice(-10);
     }
 
-    // --- FAILOVER LOGIC ---
-    // Will try Model 1 -> Model 2 -> Model 3
-    for (const modelName of APP_CONFIG.AI_MODELS) {
-        try {
-            console.log("Attempting AI generation with model: " + modelName);
-            const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
-                model: modelName,
-                messages: session.history,
-                temperature: 0.7,
-                max_tokens: 300
-            }, {
-                headers: {
-                    "Authorization": "Bearer " + APP_CONFIG.OPENROUTER_KEY,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://reverie-digitals.com",
-                    "X-Title": "Reverie Sales Bot"
-                }
-            });
+    try {
+        // Construct the payload for Google Gemini
+        const payload = {
+            contents: [
+                { role: "user", parts: [{ text: systemPrompt + "\n\nUser says: " + userText }] }
+                // Note: For simplicity in this version, we send the system prompt + user text as one block
+                // to avoid complex history management issues.
+            ]
+        };
 
-            const reply = response.data.choices[0].message.content;
-            session.history.push({ role: "assistant", content: reply });
-            return reply; // Success! Return immediately.
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${APP_CONFIG.GOOGLE_API_KEY}`,
+            payload,
+            { headers: { "Content-Type": "application/json" } }
+        );
 
-        } catch (error) {
-            console.error("Model " + modelName + " failed: " + (error.response?.data?.error?.message || error.message));
-            
-            // If the error is 401 (Bad Key), fail immediately, don't try other models
-            if (error.response?.status === 401) {
-                console.error("CRITICAL: Your API Key is invalid. Stop trying.");
-                return "System Error: The AI Key is invalid (401). Please update the code.";
-            }
-        }
+        const reply = response.data.candidates[0].content.parts[0].text;
+        
+        // Add AI reply to history
+        session.history.push({ role: "model", parts: [{ text: reply }] });
+        
+        return reply;
+
+    } catch (error) {
+        console.error("Google AI Failed:", error.response?.data || error.message);
+        return "I'm having trouble connecting to the server. Please try again in a moment.";
     }
-
-    // If ALL models fail:
-    return "I am currently receiving high traffic and my servers are busy. Please message me again in 1 minute.";
 }
 
 async function sendWhatsAppMessage(to, text) {
@@ -230,8 +217,6 @@ process.on('uncaughtException', (err) => { console.error('[Critical] Uncaught Ex
 process.on('unhandledRejection', (reason, promise) => { console.error('[Critical] Unhandled Rejection:', reason); });
 
 app.listen(APP_CONFIG.PORT, () => {
-    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v2.2.1 Stable)');
-    console.log('🛡️  Security Modules: Active');
-    console.log('🧠 AI Failover System: Active');
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.0 Google Direct)');
     console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
 });
