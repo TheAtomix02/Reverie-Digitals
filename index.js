@@ -1,13 +1,13 @@
 /**
- * REVERIE DIGITALS - AI GROWTH ENGINE (GOOGLE EDITION)
+ * REVERIE DIGITALS - AI GROWTH ENGINE (INDIA STABLE EDITION)
  * --------------------------------------------------------
  * Architecture: Event-Driven Node.js Server
  * Integrations: WhatsApp Cloud API (Meta), Google Gemini API (Direct)
  * Security: Helmet, Rate Limiting, CORS, Input Validation
  * Performance: In-Memory Session Management with Auto-Garbage Collection
- * Reliability: Multi-Model Failover System (Unstoppable Mode)
+ * Reliability: Extended Model List for India Region Stability
  * * @author Reverie Digitals
- * @version 3.1.0 (Google Direct - Multi-Model Failover)
+ * @version 3.2.0 (Google Direct - India Failover)
  */
 
 // --- 1. CORE DEPENDENCIES ---
@@ -33,12 +33,16 @@ const APP_CONFIG = {
     // ⚠️ PASTE YOUR GOOGLE KEY HERE (Starts with AIza...)
     GOOGLE_API_KEY: "AIzaSyAov26okhg1JpQH2lNUaPPumWWhab2fR30", 
     
-    // FAILOVER LIST: The bot will try these in order until one works.
+    // FAILOVER LIST (OPTIMIZED FOR INDIA): 
+    // We use specific version numbers (001, 002) which are more stable than generic aliases.
     GOOGLE_MODELS: [
-        "gemini-1.5-flash", // Fastest & Cheapest (Primary)
-        "gemini-1.5-pro",   // Smarter, higher limits
-        "gemini-1.0-pro",   // Old reliable backup
-        "gemini-2.0-flash-exp" // Experimental bleeding edge
+        "gemini-1.5-flash",      // Standard Fast Model
+        "gemini-1.5-flash-001",  // Specific Version 1 (Very Stable)
+        "gemini-1.5-flash-002",  // Specific Version 2 (Newer)
+        "gemini-1.5-flash-8b",   // High Efficiency / Low Latency
+        "gemini-1.5-pro",        // Smarter Model
+        "gemini-1.5-pro-001",    // Specific Pro Version
+        "gemini-2.0-flash-exp"   // Experimental (Last resort due to quotas)
     ],
     
     PORT: process.env.PORT || 3000
@@ -77,7 +81,7 @@ setInterval(() => {
 
 // --- 6. ROUTES ---
 app.get('/', (req, res) => {
-    res.status(200).json({ status: 'online', service: 'Reverie AI Engine (Google Failover)', uptime: process.uptime() });
+    res.status(200).json({ status: 'online', service: 'Reverie AI Engine (India Stable)', uptime: process.uptime() });
 });
 
 app.get('/webhook', (req, res) => {
@@ -142,7 +146,7 @@ async function generateGoogleResponse(userId, userText) {
     const session = sessionStore.get(userId);
     session.lastActive = Date.now();
 
-    // Add user message to local history (Simplified for Google)
+    // Add user message to local history
     session.history.push({ role: "user", parts: [{ text: userText }] });
 
     // Keep history short (Last 10 turns)
@@ -155,7 +159,6 @@ async function generateGoogleResponse(userId, userText) {
         try {
             console.log("🤖 Attempting generation with: " + modelName);
             
-            // Construct the payload for Google Gemini
             const payload = {
                 contents: [
                     { role: "user", parts: [{ text: systemPrompt + "\n\nUser says: " + userText }] }
@@ -180,8 +183,7 @@ async function generateGoogleResponse(userId, userText) {
 
         } catch (error) {
             console.warn(`⚠️ Model ${modelName} Failed: ${error.response?.data?.error?.message || error.message}`);
-            // If it failed, the loop continues to the next model in the list automatically.
-            // If it was the last model, the loop ends.
+            // If it failed, the loop continues to the next model in the list.
         }
     }
 
@@ -237,7 +239,7 @@ process.on('uncaughtException', (err) => { console.error('[Critical] Uncaught Ex
 process.on('unhandledRejection', (reason, promise) => { console.error('[Critical] Unhandled Rejection:', reason); });
 
 app.listen(APP_CONFIG.PORT, () => {
-    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.1.0 Multi-Model Failover)');
+    console.log('\n🚀 REVERIE AI ENGINE ONLINE (v3.2.0 India Stable)');
     console.log('🛡️  Security Modules: Active');
     console.log('🧠 AI Strategy: Rolling Failover');
     console.log('📡 Port: ' + APP_CONFIG.PORT + '\n');
