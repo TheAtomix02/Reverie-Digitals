@@ -2,7 +2,7 @@
  * REVERIE DIGITALS - AI GROWTH ENGINE (SECURE EDITION)
  * ------------------------------------------------------------
  * Architecture: Enterprise Event-Driven Microservices (Monolith)
- * Version: 5.2.0 (Environment Variables Patch)
+ * Version: 5.3.0 (Verbose Debugging Patch)
  * Features: 50+ (Encryption, Analytics, Self-Healing, Admin Tools)
  * * COPYRIGHT 2025 REVERIE DIGITALS
  */
@@ -109,10 +109,12 @@ async function discoverModels() {
             console.log(`✅ [Auto-Discovery] Found ${found.length} models. Priority: ${found[0]}`);
         }
     } catch (e) {
-        if (e.response && e.response.data && JSON.stringify(e.response.data).includes("leaked")) {
+        const errMsg = e.response?.data?.error?.message || e.message;
+        if (JSON.stringify(errMsg).includes("leaked")) {
              console.error("\n🚨 CRITICAL: YOUR KEY IS LEAKED. GENERATE A NEW ONE AND UPDATE RENDER ENV VARS.\n");
         } else {
-             console.error("⚠️ [Auto-Discovery] Failed. Using defaults.");
+             console.error(`⚠️ [Auto-Discovery] Failed: ${errMsg}`);
+             console.error("Using default model list.");
         }
     }
 }
@@ -176,7 +178,7 @@ app.get('/', (req, res) => {
     res.json({
         service: "Reverie AI Secure",
         status: "ONLINE",
-        key_configured: !!CONFIG.GOOGLE_API_KEY
+        key_status: CONFIG.GOOGLE_API_KEY ? "CONFIGURED (Last 4: " + CONFIG.GOOGLE_API_KEY.slice(-4) + ")" : "MISSING"
     });
 });
 
@@ -260,7 +262,8 @@ async function processUserMessage(userId, userText, msgId) {
             reply = res.data.candidates[0].content.parts[0].text;
             break;
         } catch (e) {
-            console.warn(`Model ${model} failed.`);
+            const apiError = e.response?.data?.error?.message || e.message;
+            console.warn(`Model ${model} failed: ${apiError}`);
         }
     }
 
@@ -281,7 +284,13 @@ async function sendWhatsApp(to, body) {
             { messaging_product: "whatsapp", to: to, type: "text", text: { body: body } },
             { headers: { Authorization: `Bearer ${CONFIG.WHATSAPP_TOKEN}` } }
         );
-    } catch (e) { console.error("Send Failed:", e.message); }
+    } catch (e) { 
+        if (e.response && e.response.status === 401) {
+            console.error("🚨 WHATSAPP TOKEN EXPIRED (401). Please update WHATSAPP_TOKEN in Render.");
+        } else {
+            console.error("Send Failed:", e.message); 
+        }
+    }
 }
 
 async function markRead(msgId) {
